@@ -1,0 +1,13 @@
+# Whitelist: only the integration is published.
+# The research notes, captures and scripts in this folder contain device-specific
+# secrets (device code, stream key, account) and must never be committed.
+/*
+!/.gitignore
+!/README.md
+!/hacs.json
+!/pyproject.toml
+!/LICENSE
+!/custom_components/
+!/tests/
+__pycache__/
+*.pyc

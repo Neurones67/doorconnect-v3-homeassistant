@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "DoorConnect v3 door station",
+        "description": "IP address of the outdoor station (WelcomeEye Connect 3) and its 6-digit device code (the one the DoorConnect app asks for).",
+        "data": {
+          "host": "IP address",
+          "device_password": "Device code"
+        }
+      },
+      "cloud": {
+        "title": "History (optional)",
+        "description": "The unlock/call log only exists in the app's cloud. Enter the email and password of the DoorConnect account that owns the device, or leave empty to skip history. Warning: the account locks after several wrong passwords.",
+        "data": {
+          "cloud_user": "DoorConnect account email",
+          "cloud_password": "Account password"
+        }
+      },
+      "reauth_confirm": {
+        "title": "DoorConnect account rejected",
+        "description": "The cloud rejected the credentials. Please enter them again.",
+        "data": {
+          "cloud_user": "DoorConnect account email",
+          "cloud_password": "Account password"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Device unreachable (or wrong code: the device then stalls its answer).",
+      "invalid_auth": "Device code rejected.",
+      "invalid_cloud_auth": "Account credentials rejected by the cloud.",
+      "cloud_unreachable": "Cloud unreachable."
+    },
+    "abort": {
+      "already_configured": "This device is already configured.",
+      "reauth_successful": "Credentials updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "history_interval": "History polling interval (minutes)",
+          "stream_bind": "Local video server bind address",
+          "stream_port": "Local video server port (0 = automatic)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "open_strike": {
+        "name": "Open door strike"
+      },
+      "open_gate": {
+        "name": "Open gate"
+      },
+      "refresh_snapshot": {
+        "name": "Refresh image"
+      }
+    },
+    "camera": {
+      "doorstation": {
+        "name": "Camera"
+      }
+    },
+    "sensor": {
+      "last_event": {
+        "name": "Last event"
+      },
+      "last_unlock": {
+        "name": "Last unlock"
+      },
+      "last_ring": {
+        "name": "Last call"
+      }
+    }
+  }
+}

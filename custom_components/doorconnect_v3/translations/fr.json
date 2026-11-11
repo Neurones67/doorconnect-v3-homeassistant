@@ -1,0 +1,81 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Visiophone DoorConnect v3",
+        "description": "Adresse IP de la platine et son code à 6 chiffres (celui demandé par l'app DoorConnect pour ce visiophone).",
+        "data": {
+          "host": "Adresse IP",
+          "device_password": "Code de la platine"
+        }
+      },
+      "cloud": {
+        "title": "Historique (facultatif)",
+        "description": "Le journal des ouvertures et des appels n'existe que sur le cloud de l'app. Indiquez l'email et le mot de passe du compte DoorConnect qui possède le visiophone, ou laissez vide pour ne pas activer l'historique. Attention : le compte se verrouille après plusieurs mots de passe erronés.",
+        "data": {
+          "cloud_user": "Email du compte DoorConnect",
+          "cloud_password": "Mot de passe du compte"
+        }
+      },
+      "reauth_confirm": {
+        "title": "Compte DoorConnect refusé",
+        "description": "Le cloud a refusé les identifiants. Saisissez-les à nouveau.",
+        "data": {
+          "cloud_user": "Email du compte DoorConnect",
+          "cloud_password": "Mot de passe du compte"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Platine injoignable (ou code erroné : la platine fait alors traîner sa réponse).",
+      "invalid_auth": "Code de la platine refusé.",
+      "invalid_cloud_auth": "Identifiants du compte refusés par le cloud.",
+      "cloud_unreachable": "Cloud injoignable."
+    },
+    "abort": {
+      "already_configured": "Ce visiophone est déjà configuré.",
+      "reauth_successful": "Identifiants mis à jour."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Options",
+        "data": {
+          "history_interval": "Intervalle de lecture de l'historique (minutes)",
+          "stream_bind": "Adresse d'écoute du serveur vidéo local",
+          "stream_port": "Port du serveur vidéo local (0 = automatique)"
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "open_strike": {
+        "name": "Ouvrir la gâche"
+      },
+      "open_gate": {
+        "name": "Ouvrir le portail"
+      },
+      "refresh_snapshot": {
+        "name": "Rafraîchir l'image"
+      }
+    },
+    "camera": {
+      "doorstation": {
+        "name": "Caméra"
+      }
+    },
+    "sensor": {
+      "last_event": {
+        "name": "Dernier événement"
+      },
+      "last_unlock": {
+        "name": "Dernière ouverture"
+      },
+      "last_ring": {
+        "name": "Dernier appel"
+      }
+    }
+  }
+}
