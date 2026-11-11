@@ -63,6 +63,14 @@ class CloudError(Exception):
     """Error while talking to the cloud."""
 
 
+class CloudHTTPError(CloudError):
+    """Non-2xx HTTP answer (nginx answers 404 when the server-side session is gone)."""
+
+    def __init__(self, status: int, path: str) -> None:
+        super().__init__(f"HTTP {status} from {path}")
+        self.status = status
+
+
 class CloudAuthError(CloudError):
     """Credentials rejected (do not retry in a loop: the account would get locked)."""
 
@@ -188,8 +196,11 @@ class QvCloud:
             timeout=aiohttp.ClientTimeout(total=30),
         ) as r:
             raw = await r.read()
+            path = url.split("/", 3)[-1]
+            _LOGGER.debug("POST %s -> HTTP %s, %d bytes, cookies set: %s",
+                          path, r.status, len(raw), sorted(r.cookies) or "none")
             if r.status >= 400:
-                raise CloudError(f"HTTP {r.status} from {url.split('/', 3)[-1]}")
+                raise CloudHTTPError(r.status, path)
             # The servers do not send a charset; "utf-8-sig" also drops a leading BOM.
             return raw.decode("utf-8-sig", errors="replace")
 
@@ -296,6 +307,12 @@ class QvCloud:
             for page in range(pages):
                 try:
                     res, new_maxid, txt = await self._query_page(maxid, page, lines)
+                except CloudHTTPError as err:
+                    if err.status != 404:
+                        raise
+                    _LOGGER.debug("History query answered HTTP 404: treating the session as expired")
+                    expired = True
+                    break
                 except (aiohttp.ClientError, asyncio.TimeoutError) as err:
                     raise CloudError(f"history: {err}") from err
                 # An empty body has been seen when the alarm session is no longer valid.
@@ -312,6 +329,6 @@ class QvCloud:
             if not expired:
                 return events
             if attempt == 1:
-                _LOGGER.debug("Cloud session expired, logging in again")
+                _LOGGER.info("Qvii cloud session expired, logging in again")
                 await self.async_login()
         raise CloudError("cloud session still invalid after re-login")

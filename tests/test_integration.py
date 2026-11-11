@@ -1,5 +1,5 @@
 """Integration tests with a simulated door station and cloud (no network access)."""
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from homeassistant import config_entries
@@ -117,3 +117,22 @@ def test_parse_records_tolerates_sloppy_xml() -> None:
     assert len(events) == 1
     assert events[0]["type"] == "ring"
     assert events[0]["snapshot_url"] == "https://x.example/a.jpg?k=1&t=2"
+
+
+async def test_history_relogin_after_404() -> None:
+    """nginx answers 404 once the alarm session is gone: log in again once, then succeed."""
+    from custom_components.doorconnect_v3.cloud import CloudHTTPError, QvCloud
+
+    ok = ("<envelope><header><result>0</result></header><content><record><data><id>1</id>"
+          "<time>2026-11-11 14:00:00</time><event>19</event></data></record></content></envelope>")
+    cloud = QvCloud(MagicMock(), "user", "pwd", "cid")
+    cloud._alarm_session = "old"
+    login = AsyncMock()
+    with (
+        patch.object(cloud, "async_login", login),
+        patch.object(cloud, "_query_page", AsyncMock(
+            side_effect=[CloudHTTPError(404, "UserAlarm"), ("0", "1", ok)])),
+    ):
+        events = await cloud.async_get_history(pages=1)
+    assert login.await_count == 1
+    assert [e["id"] for e in events] == ["1"]
