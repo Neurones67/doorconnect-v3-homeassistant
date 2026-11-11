@@ -13,7 +13,8 @@ import asyncio
 import logging
 import time
 
-from homeassistant.components.camera import Camera, CameraEntityFeature
+from homeassistant.components.camera import Camera
+from homeassistant.components.camera.const import CameraEntityFeature
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -47,8 +48,9 @@ class DoorCamera(Camera):
         self._tried_initial = False
         self._lock = asyncio.Lock()
 
+    # Plain property on purpose: the streaming state lives in the hub, not in an _attr_.
     @property
-    def is_streaming(self) -> bool:
+    def is_streaming(self) -> bool:  # pyright: ignore[reportIncompatibleVariableOverride]
         return self._data.hub.streaming
 
     async def stream_source(self) -> str | None:

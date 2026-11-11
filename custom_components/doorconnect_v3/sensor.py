@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorEntityDescription
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
@@ -42,7 +42,9 @@ async def async_setup_entry(
     async_add_entities(HistorySensor(entry, coordinator, d) for d in SENSORS)
 
 
-class HistorySensor(CoordinatorEntity[HistoryCoordinator], SensorEntity):
+class HistorySensor(  # pyright: ignore[reportIncompatibleVariableOverride]  ("available": HA typing quirk)
+    CoordinatorEntity[HistoryCoordinator], SensorEntity
+):
     _attr_has_entity_name = True
     _unrecorded_attributes = frozenset({"history"})
 
@@ -50,32 +52,34 @@ class HistorySensor(CoordinatorEntity[HistoryCoordinator], SensorEntity):
                  description: HistorySensorDescription) -> None:
         super().__init__(coordinator)
         self.entity_description = description
+        self._desc = description  # typed access to select/as_timestamp
         self._attr_unique_id = f"{entry.unique_id}_{description.key}"
         self._attr_device_info = entry.runtime_data.device_info
+        self._update_attrs()
 
-    def _event(self) -> dict[str, Any] | None:
-        return next((e for e in self.coordinator.data or [] if self.entity_description.select(e)), None)
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self._update_attrs()
+        super()._handle_coordinator_update()
 
-    @property
-    def native_value(self):
-        ev = self._event()
+    def _update_attrs(self) -> None:
+        events = self.coordinator.data or []
+        ev = next((e for e in events if self._desc.select(e)), None)
         if ev is None:
-            return None
-        return ev["datetime"] if self.entity_description.as_timestamp else ev["description"]
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any] | None:
-        ev = self._event()
-        if ev is None:
-            return None
-        attrs = {k: ev[k] for k in _PUBLIC if ev.get(k) is not None}
+            self._attr_native_value = None
+            self._attr_extra_state_attributes = {}
+            return
+        self._attr_native_value = (
+            ev["datetime"] if self._desc.as_timestamp else ev["description"]
+        )
+        attrs: dict[str, Any] = {k: ev[k] for k in _PUBLIC if ev.get(k) is not None}
         attrs["time"] = ev["datetime"].isoformat() if ev["datetime"] else ev["time"]
-        if self.entity_description.key == "last_event":
+        if self._desc.key == "last_event":
             attrs["history"] = [
                 {"time": e["datetime"].isoformat() if e["datetime"] else e["time"],
                  "description": e["description"], "type": e["type"],
                  **({"method": e["method"]} if e["method"] else {}),
                  **({"output": e["output"]} if e["output"] else {})}
-                for e in (self.coordinator.data or [])[:HISTORY_ATTR_LEN]
+                for e in events[:HISTORY_ATTR_LEN]
             ]
-        return attrs
+        self._attr_extra_state_attributes = attrs

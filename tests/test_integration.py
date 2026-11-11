@@ -7,6 +7,7 @@ from homeassistant.const import CONF_HOST
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResultType
 
+from custom_components.doorconnect_v3 import DoorConnectConfigEntry
 from custom_components.doorconnect_v3.cloud import parse_records
 from custom_components.doorconnect_v3.const import DOMAIN, EVENT_DOORCONNECT
 
@@ -42,17 +43,19 @@ def mocks(socket_enabled):
         yield open_door, history
 
 
-async def _setup(hass: HomeAssistant):
+async def _setup(hass: HomeAssistant) -> DoorConnectConfigEntry:
     result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
-    assert result["type"] is FlowResultType.FORM
+    assert result.get("type") is FlowResultType.FORM
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {CONF_HOST: "192.0.2.10", "device_password": "123456"})
-    assert result["step_id"] == "cloud"
+    assert result.get("step_id") == "cloud"
     result = await hass.config_entries.flow.async_configure(
         result["flow_id"], {"cloud_user": "a@b.c", "cloud_password": "x"})
-    assert result["type"] is FlowResultType.CREATE_ENTRY
+    assert result.get("type") is FlowResultType.CREATE_ENTRY
     await hass.async_block_till_done()
-    return result["result"]
+    entry = result.get("result")
+    assert entry is not None
+    return entry
 
 
 async def test_setup_entities_and_open(hass: HomeAssistant, mocks):
@@ -86,6 +89,7 @@ async def test_new_events_fired(hass: HomeAssistant, mocks):
     hass.bus.async_listen(EVENT_DOORCONNECT, lambda ev: fired.append(ev.data))
     new = parse_records(HISTORY_XML.replace("<id>3</id>", "<id>4</id>"))
     history.return_value = new
+    assert entry.runtime_data.history is not None
     await entry.runtime_data.history.async_refresh()
     await hass.async_block_till_done()
     assert len(fired) == 1 and fired[0]["type"] == "ring"
@@ -99,7 +103,7 @@ async def test_bad_device_code(hass: HomeAssistant):
         result = await hass.config_entries.flow.async_init(DOMAIN, context={"source": config_entries.SOURCE_USER})
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: "192.0.2.10", "device_password": "000000"})
-    assert result["errors"] == {"base": "invalid_auth"}
+    assert result.get("errors") == {"base": "invalid_auth"}
 
 
 def test_parse_records_tolerates_sloppy_xml() -> None:
@@ -107,7 +111,7 @@ def test_parse_records_tolerates_sloppy_xml() -> None:
     from custom_components.doorconnect_v3.cloud import parse_records
 
     txt = (
-        "﻿\n<?xml version=\"1.0\" encoding=\"UTF-8\"?><envelope><header><result>0</result>"
+        "\ufeff\n<?xml version=\"1.0\" encoding=\"UTF-8\"?><envelope><header><result>0</result>"
         "</header><content><record><data><id>42</id><time>2026-11-11 13:00:00</time>"
         "<event>19</event><alarmsourcename>Door\x01 1</alarmsourcename>"
         "<recordresurl>https://x.example/a.jpg?k=1&t=2</recordresurl></data></record></content>"

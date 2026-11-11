@@ -425,7 +425,7 @@ class MediaServer:
         site = web.TCPSite(self._runner, self.bind, self.port)
         await site.start()
         if self.port == 0:
-            self.port = site._server.sockets[0].getsockname()[1]  # noqa: SLF001
+            self.port = self._runner.addresses[0][1]
         _LOGGER.debug("Local video server listening on %s", self.url)
 
     async def async_stop(self) -> None:

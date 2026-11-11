@@ -45,8 +45,8 @@ XML_DECL = '<?xml version="1.0" encoding="UTF-8"?>'
 # Alarm server result codes meaning "session invalid" (SDKStatus)
 SESSION_ERRORS = {"1009", "1012"}
 
-EVENT_TYPES = {19: "ring", 7: "ring", 63: "unlock", 2: "motion"}
-UNLOCK_METHODS = {
+EVENT_TYPES: dict[int | None, str] = {19: "ring", 7: "ring", 63: "unlock", 2: "motion"}
+UNLOCK_METHODS: dict[int | None, str] = {
     0: "default", 1: "qrcode", 2: "password", 3: "indoor_monitor", 4: "app",
     5: "rf_badge", 6: "exit_button", 7: "dtmf", 8: "google", 9: "alexa", 10: "face",
 }
@@ -55,7 +55,7 @@ UNLOCK_METHOD_LABELS = {
     "app": "app", "rf_badge": "RFID badge", "exit_button": "exit button", "dtmf": "DTMF",
     "google": "Google", "alexa": "Alexa", "face": "face",
 }
-OUTPUTS = {1: "strike", 2: "gate"}
+OUTPUTS: dict[int | None, str] = {1: "strike", 2: "gate"}
 OUTPUT_LABELS = {"strike": "door strike", "gate": "gate"}
 
 
@@ -121,7 +121,8 @@ def _jwt_uid(token: str) -> str | None:
 
 
 def _tz_gmt() -> str:
-    off = int(round(dt.datetime.now().astimezone().utcoffset().total_seconds() / 60))
+    offset = dt.datetime.now().astimezone().utcoffset() or dt.timedelta()
+    off = int(round(offset.total_seconds() / 60))
     sign = "+" if off >= 0 else "-"
     off = abs(off)
     return f"GMT{sign}{off // 60:02d}:{off % 60:02d}"
