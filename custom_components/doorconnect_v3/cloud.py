@@ -25,6 +25,7 @@ import datetime as dt
 import hashlib
 import json
 import logging
+import re
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -70,9 +71,27 @@ def sha256_hex(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
+_BARE_AMP = re.compile(r"&(?!(?:[A-Za-z]+|#\d+|#x[0-9A-Fa-f]+);)")
+_BAD_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
+
+
+def _parse_xml(txt: str) -> ET.Element:
+    """Parse a server answer, tolerating what the Qvii servers are known to send.
+
+    The answers are not always well-formed XML: a UTF-8 BOM or whitespace before the XML
+    declaration, bare "&" inside snapshot URLs, control characters in names.
+    """
+    try:
+        return ET.fromstring(txt)
+    except ET.ParseError:
+        pass
+    cleaned = _BAD_CHARS.sub("", _BARE_AMP.sub("&amp;", txt.lstrip("\ufeff \t\r\n")))
+    return ET.fromstring(cleaned)
+
+
 def _find(txt: str, path: str) -> str | None:
     try:
-        return (ET.fromstring(txt).findtext(path) or "").strip() or None
+        return (_parse_xml(txt).findtext(path) or "").strip() or None
     except ET.ParseError:
         return None
 
@@ -117,9 +136,12 @@ def describe(ev: dict[str, Any]) -> str:
 def parse_records(txt: str) -> list[dict[str, Any]]:
     """Turn a client-query-recordlist answer into normalized events."""
     try:
-        root = ET.fromstring(txt)
+        root = _parse_xml(txt)
     except ET.ParseError as err:
-        raise CloudError("unreadable history answer") from err
+        _LOGGER.debug("Unreadable history answer (%d chars): %r", len(txt), txt[:600])
+        if not txt.strip():
+            raise CloudError("empty history answer") from err
+        raise CloudError(f"unreadable history answer ({err}; starts with {txt[:40]!r})") from err
     out = []
     for item in root.iterfind(".//record/data"):
         g = lambda t: (item.findtext(t) or "").strip()  # noqa: E731
@@ -165,7 +187,11 @@ class QvCloud:
             headers={"Content-Type": "application/xml", "charset": "utf-8"},
             timeout=aiohttp.ClientTimeout(total=30),
         ) as r:
-            return await r.text(errors="replace")
+            raw = await r.read()
+            if r.status >= 400:
+                raise CloudError(f"HTTP {r.status} from {url.split('/', 3)[-1]}")
+            # The servers do not send a charset; "utf-8-sig" also drops a leading BOM.
+            return raw.decode("utf-8-sig", errors="replace")
 
     async def async_oauth(self) -> str:
         params = {
@@ -239,9 +265,13 @@ class QvCloud:
 
     async def async_login(self) -> None:
         self._http.cookie_jar.clear()
+        self._alarm_session = None
         await self.async_oauth()
-        sid = await self._user_login()
-        self._alarm_session = await self._alarm_login(sid)
+        try:
+            sid = await self._user_login()
+            self._alarm_session = await self._alarm_login(sid)
+        except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+            raise CloudError(f"login: {err}") from err
         _LOGGER.debug("Connected to the Qvii cloud (account %s)", self.account_id)
 
     async def _query_page(self, maxid: str, page: int, lines: int) -> tuple[str | None, str | None, str]:
@@ -268,7 +298,8 @@ class QvCloud:
                     res, new_maxid, txt = await self._query_page(maxid, page, lines)
                 except (aiohttp.ClientError, asyncio.TimeoutError) as err:
                     raise CloudError(f"history: {err}") from err
-                if res in SESSION_ERRORS:
+                # An empty body has been seen when the alarm session is no longer valid.
+                if res in SESSION_ERRORS or not txt.strip():
                     expired = True
                     break
                 if res not in (None, "0"):

@@ -100,3 +100,20 @@ async def test_bad_device_code(hass: HomeAssistant):
         result = await hass.config_entries.flow.async_configure(
             result["flow_id"], {CONF_HOST: "192.0.2.10", "device_password": "000000"})
     assert result["errors"] == {"base": "invalid_auth"}
+
+
+def test_parse_records_tolerates_sloppy_xml() -> None:
+    """BOM, bare '&' in snapshot URLs and control characters must not break the history."""
+    from custom_components.doorconnect_v3.cloud import parse_records
+
+    txt = (
+        "﻿\n<?xml version=\"1.0\" encoding=\"UTF-8\"?><envelope><header><result>0</result>"
+        "</header><content><record><data><id>42</id><time>2026-11-11 13:00:00</time>"
+        "<event>19</event><alarmsourcename>Door\x01 1</alarmsourcename>"
+        "<recordresurl>https://x.example/a.jpg?k=1&t=2</recordresurl></data></record></content>"
+        "</envelope>"
+    )
+    events = parse_records(txt)
+    assert len(events) == 1
+    assert events[0]["type"] == "ring"
+    assert events[0]["snapshot_url"] == "https://x.example/a.jpg?k=1&t=2"
