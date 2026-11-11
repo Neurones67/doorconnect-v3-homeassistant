@@ -1,12 +1,22 @@
 {
   "domain": "doorconnect_v3",
   "name": "DoorConnect v3 (Philips WelcomeEye Connect 3)",
-  "after_dependencies": ["stream", "go2rtc", "logbook"],
-  "codeowners": ["@Neurones67"],
+  "after_dependencies": [
+    "stream",
+    "go2rtc",
+    "logbook"
+  ],
+  "codeowners": [
+    "@Neurones67"
+  ],
   "config_flow": true,
+  "documentation": "https://github.com/Neurones67/doorconnect-v3-homeassistant",
   "integration_type": "device",
   "iot_class": "local_polling",
-  "loggers": ["custom_components.doorconnect_v3"],
+  "issue_tracker": "https://github.com/Neurones67/doorconnect-v3-homeassistant/issues",
+  "loggers": [
+    "custom_components.doorconnect_v3"
+  ],
   "requirements": [],
   "version": "0.1.0"
 }

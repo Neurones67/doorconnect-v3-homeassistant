@@ -1,5 +1,9 @@
 # DoorConnect v3 for Home Assistant
 
+[![Validate](https://github.com/Neurones67/doorconnect-v3-homeassistant/actions/workflows/validate.yml/badge.svg)](https://github.com/Neurones67/doorconnect-v3-homeassistant/actions/workflows/validate.yml)
+[![Tests](https://github.com/Neurones67/doorconnect-v3-homeassistant/actions/workflows/tests.yml/badge.svg)](https://github.com/Neurones67/doorconnect-v3-homeassistant/actions/workflows/tests.yml)
+[![HACS Custom](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz/docs/faq/custom_repositories/)
+
 Unofficial Home Assistant integration for the **Philips WelcomeEye Connect 3** video door
 station, the device paired with the **Philips Door Connect** Android app
 (`com.extel.philipsdoorconnect`).
@@ -24,8 +28,14 @@ station, the device paired with the **Philips Door Connect** Android app
 
 ## Installation
 
-1. Copy `custom_components/doorconnect_v3/` into the `config/custom_components/` folder of Home
-   Assistant, or add this repository as a *custom repository* in HACS.
+1. Install the integration, either:
+   - **with HACS** (recommended):
+     [![Open in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=Neurones67&repository=doorconnect-v3-homeassistant&category=integration)
+     or, by hand: *HACS → ⋮ → Custom repositories*, add
+     `https://github.com/Neurones67/doorconnect-v3-homeassistant` with type *Integration*, then
+     download *DoorConnect v3*;
+   - **manually**: copy `custom_components/doorconnect_v3/` into the `config/custom_components/`
+     folder of Home Assistant.
 2. Restart Home Assistant.
 3. Go to *Settings → Devices & services → Add integration → DoorConnect v3*.
 4. Enter:

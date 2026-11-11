@@ -1,0 +1,5 @@
+# Pinned to the versions the test suite was last run against (Home Assistant 2026.10.4).
+pytest-homeassistant-custom-component==0.13.375
+PyTurboJPEG==2.6.1
+numpy==2.3.2
+av==19.0.2

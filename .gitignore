@@ -7,6 +7,8 @@
 !/hacs.json
 !/pyproject.toml
 !/LICENSE
+!/requirements_test.txt
+!/.github/
 !/custom_components/
 !/tests/
 __pycache__/
