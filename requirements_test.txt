@@ -1,5 +1,4 @@
-# Pinned to the versions the test suite was last run against (Home Assistant 2026.10.4).
+# Only the test harness is pinned: it pins the matching Home Assistant release.
+# numpy, av and PyTurboJPEG are installed afterwards with Home Assistant's own constraints
+# (see .github/workflows/tests.yml), so the tests always use the versions HA ships.
 pytest-homeassistant-custom-component==0.13.375
-PyTurboJPEG==2.6.1
-numpy==2.5.4
-av==19.0.2

@@ -12,12 +12,16 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.15"
+          python-version: "3.14"  # must match the Python Home Assistant runs on
           cache: pip
           cache-dependency-path: requirements_test.txt
       - name: System libraries
         run: sudo apt-get update && sudo apt-get install -y libturbojpeg0
       - name: Python dependencies
-        run: pip install -r requirements_test.txt
+        run: |
+          pip install -r requirements_test.txt
+          # Same versions as Home Assistant itself (stream/camera components).
+          ha_dir=$(python -c "import homeassistant, os; print(os.path.dirname(homeassistant.__file__))")
+          pip install -c "$ha_dir/package_constraints.txt" av PyTurboJPEG numpy
       - name: Run tests
         run: pytest -p no:sugar -v

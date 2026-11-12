@@ -1,0 +1,16 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "packageRules": [
+    {
+      "description": "CI Python must follow the version Home Assistant runs on, not the latest release.",
+      "matchDepNames": ["python"],
+      "allowedVersions": "<3.15"
+    },
+    {
+      "description": "The test harness pins Home Assistant and its numpy/av/turbojpeg versions: one PR at a time.",
+      "matchPackageNames": ["pytest-homeassistant-custom-component"],
+      "groupName": "Home Assistant test harness"
+    }
+  ]
+}

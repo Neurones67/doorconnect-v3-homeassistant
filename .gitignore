@@ -8,6 +8,7 @@
 !/pyproject.toml
 !/LICENSE
 !/requirements_test.txt
+!/renovate.json
 !/.github/
 !/custom_components/
 !/tests/
