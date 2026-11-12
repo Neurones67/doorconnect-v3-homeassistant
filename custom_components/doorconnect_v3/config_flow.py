@@ -5,15 +5,9 @@ import os
 import secrets
 import uuid
 from collections.abc import Mapping
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
-if TYPE_CHECKING:
-    import probatio as vol
-else:
-    try:  # Home Assistant 2026.x validates flows with probatio (voluptuous-compatible API)
-        import probatio as vol
-    except ImportError:  # older releases
-        import voluptuous as vol
+import probatio as vol  # Home Assistant >= 2026.9 validates schemas with probatio
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.const import CONF_HOST

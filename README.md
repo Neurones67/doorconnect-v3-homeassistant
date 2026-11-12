@@ -44,7 +44,7 @@ station, the device paired with the **Philips Door Connect** Android app
    - *(optional)* **the email and password of the DoorConnect account** that owns the device. This
      is only used for the history; leave it empty to stay fully local.
 
-Minimum version: Home Assistant 2025.2. There are no Python requirements: the integration uses
+Minimum version: Home Assistant 2026.9. There are no Python requirements: the integration uses
 `aiohttp`, `cryptography` and `av` (PyAV), which ship with Home Assistant.
 
 ### Options
