@@ -239,8 +239,10 @@ class QvCloud:
         self._pwd = sha256_hex(password)
         self._client_id = client_id
         self._alarm_session: str | None = None
+        self._user_session: str | None = None
         self.account_id: str | None = None
         self.servers: dict[str, str] = dict(DEFAULT_SERVERS)
+        self.full_logins = 0  # statistics, for diagnostics
 
     async def async_resolve_servers(self) -> None:
         """Ask the bootstrap server which servers serve this region (like the app does)."""
@@ -345,15 +347,17 @@ class QvCloud:
         return _find(txt, ".//session/id") or _find(txt, ".//header/session") or session_id
 
     async def async_login(self) -> None:
+        """Full login: server lookup, OAuth (password), duplex user login, alarm client-login."""
         self._http.cookie_jar.clear()
-        self._alarm_session = None
+        self._alarm_session = self._user_session = None
         await self.async_resolve_servers()
         await self.async_oauth()
         try:
-            sid = await self._user_login()
-            self._alarm_session = await self._alarm_login(sid)
+            self._user_session = await self._user_login()
+            self._alarm_session = await self._alarm_login(self._user_session)
         except (aiohttp.ClientError, asyncio.TimeoutError) as err:
             raise CloudError(f"login: {err}") from err
+        self.full_logins += 1
         _LOGGER.debug("Connected to the Qvii cloud (account %s)", self.account_id)
 
     async def _query_page(self, maxid: str, page: int, lines: int) -> tuple[str | None, str | None, str]:
@@ -367,39 +371,45 @@ class QvCloud:
         )
         return _find(txt, ".//header/result"), _find(txt, ".//content/maxid"), txt
 
+    async def _read_history(self, pages: int, lines: int) -> list[dict[str, Any]] | None:
+        """Read the history with the current alarm session; None if that session has expired."""
+        events: list[dict[str, Any]] = []
+        maxid = "0"
+        for page in range(pages):
+            try:
+                res, new_maxid, txt = await self._query_page(maxid, page, lines)
+            except CloudHTTPError as err:
+                if err.status != 404:
+                    raise
+                _LOGGER.debug("History query answered HTTP 404: treating the session as expired")
+                return None
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                raise CloudError(f"history: {err}") from err
+            # An empty body has been seen when the alarm session is no longer valid.
+            if res in SESSION_ERRORS or not txt.strip():
+                return None
+            if res not in (None, "0"):
+                raise CloudError(f"history: result={res}")
+            got = parse_records(txt)
+            events += got
+            if len(got) < lines:
+                break
+            maxid = new_maxid or maxid
+        return events
+
     async def async_get_history(self, pages: int = 2, lines: int = 15) -> list[dict[str, Any]]:
-        """Most recent events first (same order as the app)."""
+        """Most recent events first (same order as the app).
+
+        The user session only lives while the duplex down channel is polled (max-age 120 s,
+        DownChannelManager in the app), and the alarm session depends on it: with a poll every
+        few minutes both have expired, so an expired session means a full login.
+        """
         if not self._alarm_session:
             await self.async_login()
-        for attempt in (1, 2):
-            events: list[dict[str, Any]] = []
-            maxid = "0"
-            expired = False
-            for page in range(pages):
-                try:
-                    res, new_maxid, txt = await self._query_page(maxid, page, lines)
-                except CloudHTTPError as err:
-                    if err.status != 404:
-                        raise
-                    _LOGGER.debug("History query answered HTTP 404: treating the session as expired")
-                    expired = True
-                    break
-                except (aiohttp.ClientError, asyncio.TimeoutError) as err:
-                    raise CloudError(f"history: {err}") from err
-                # An empty body has been seen when the alarm session is no longer valid.
-                if res in SESSION_ERRORS or not txt.strip():
-                    expired = True
-                    break
-                if res not in (None, "0"):
-                    raise CloudError(f"history: result={res}")
-                got = parse_records(txt)
-                events += got
-                if len(got) < lines:
-                    break
-                maxid = new_maxid or maxid
-            if not expired:
-                return events
-            if attempt == 1:
-                _LOGGER.info("Qvii cloud session expired, logging in again")
-                await self.async_login()
+        if (events := await self._read_history(pages, lines)) is not None:
+            return events
+        _LOGGER.debug("Qvii cloud session expired, logging in again")
+        await self.async_login()
+        if (events := await self._read_history(pages, lines)) is not None:
+            return events
         raise CloudError("cloud session still invalid after re-login")
