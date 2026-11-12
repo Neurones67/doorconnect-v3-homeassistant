@@ -209,13 +209,20 @@ On the Home Assistant side:
 The door station keeps no readable local log: the app reads its history from the OEM's cloud
 (Qualvision/Qvii). The integration replays the app's calls:
 
-1. **OAuth**: `GET https://oauth2shi.qvcloud.net/qvoauthv2/token` with `grant_type=password` and
+0. **Server lookup**: the app only knows one bootstrap server, `sh2.qvcloud.net`. Its native P2P
+   library sends it `GET /mst/query` with an XML `query-hlrv2` command listing the wanted services
+   (`userapp`, `alarmapp`, `oauth2`, each with a `sec-` variant), and gets back the URL of each
+   service for the caller's region. The integration sends the same request; it needs no
+   credentials and no client certificate. Example answer for a European connection: OAuth on
+   `oauth2shi.qvcloud.net`, login on `shi-18-sec.qvcloud.net`, history on
+   `shi-25-sec.qvcloud.net:4443`. If the lookup fails, the integration falls back to known servers.
+1. **OAuth**: `GET <oauth2>/qvoauthv2/token` with `grant_type=password` and
    `pwd = sha256_hex(password)`. It returns a JWT whose `qv-uid` claim is the account ID.
-2. **User login** on `shi-19-sec.qvcloud.net`, through a long-polling "duplex" channel:
+2. **User login** on the `sec-userapp` server, through a long-polling "duplex" channel:
    `GET /auth/user;jus_duplex=down` (session cookie), then `POST /auth/user;jus_duplex=up` (XML
    `login` command). The answer, which holds the `SESSION_ID`, comes back on a new
    `GET …;jus_duplex=down`.
-3. **Alarm server login**: `POST /UserAlarm` with the `client-login` command. The app sends
+3. **Alarm server login**: `POST <sec-alarmapp>/UserAlarm` with the `client-login` command. The app sends
    `Content-Type: application/xml` **without** a charset, plus a separate `charset: utf-8` header.
    Without that detail the server answers `1009`.
 4. **Reading**: `client-query-recordlist` with an empty filter, `maxid` 0 then the returned value,
@@ -231,8 +238,10 @@ Behaviour:
 - The session is reopened automatically when it expires (`1009`/`1012`).
 - If the cloud rejects the password, the integration **stops and asks for re-authentication**
   instead of retrying, because the account gets **locked** after a few failures.
-- The `…shi…` hosts are the ones observed for the test account (region "shi"). The app resolves
-  them dynamically from the account's region, so accounts in other regions may need other servers.
+- The servers are looked up again at every login, so a server move on the vendor side (which
+  shows up as HTTP 404 on `/UserAlarm`) is followed automatically.
+- The region is the one the bootstrap server derives from the caller's IP address, like the app
+  does before login. This has only been tested from Europe.
 - Cloud timestamps are local time; they are interpreted in HA's time zone.
 
 ---
@@ -277,15 +286,18 @@ redistributed in this repository.
 2. **Native libraries from the APK** (arm64), disassembled with **capstone / pyelftools /
    llvm-objdump** to recover the framing and encryption of port 34567:
    - `liblive_player.so`: `CQUIIStreamLive`, `WQ_LIB::setup`, `build_login_packet`, `CFramePack`;
-   - `libqv-p2p-v2.so`: `ASZENO.SEARCH.V4` discovery, `AESSecret`.
+   - `libqv-p2p-v2.so`: `ASZENO.SEARCH.V4` discovery, `AESSecret`, and the cloud server lookup
+     (`ServerResource::BuildHlr` builds the `query-hlrv2` request, `DevClientMst` sends it to
+     `/mst/query` and `ParseServer` reads the answer; service names come from a table in
+     `.data.rel.ro`).
 3. **Observations on my own network and hardware**: an IDS94E6W outdoor station and a phone running
    the official app.
    - A port scan of the device: only 443 and 34567 are open, no RTSP/ONVIF.
    - **MITM captures (ARP spoofing)** of the phone ↔ door station traffic, decrypted with the stream
      key. They established the exact sequence (negotiation → login `0x01` → `0xFE 05/06/02`), the
      partial frame encryption, and the decoded H.264 picture.
-   - Captures of the phone's TLS SNI to identify the actual cloud hosts. They are not in clear in
-     the APK, because the app resolves them dynamically.
+   - Captures of the phone's TLS SNI to identify the actual cloud hosts. Only the bootstrap server
+     is written in the APK (`AppConfig.SERVER_ADDRESS`); the others are looked up at run time.
    - Live tests of the CGI, the video stream and the cloud with my own credentials. They revealed,
      among other things:
      - the exact `Content-Type` quirk;

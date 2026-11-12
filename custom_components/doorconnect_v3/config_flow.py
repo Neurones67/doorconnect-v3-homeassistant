@@ -83,6 +83,7 @@ class DoorConnectConfigFlow(ConfigFlow, domain=DOMAIN):
     async def _check_cloud(self, user: str, pwd: str) -> str | None:
         cloud = QvCloud(async_create_clientsession(self.hass, verify_ssl=False), user, pwd, "")
         try:
+            await cloud.async_resolve_servers()  # never raises: falls back to default servers
             await cloud.async_oauth()  # single attempt: the account gets locked after a few failures
         except CloudAuthError:
             return "invalid_cloud_auth"

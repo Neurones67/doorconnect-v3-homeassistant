@@ -5,16 +5,23 @@ No Home Assistant dependency: can be used and tested on its own.
 The door station does not expose its log locally: the app reads it from the OEM cloud
 (Qualvision/Qvii). Sequence reverse-engineered from the APK, then validated on a real account:
 
-  1. OAuth   GET  https://oauth2shi.qvcloud.net/qvoauthv2/token  (grant_type=password,
+  0. Servers GET  https://sh2.qvcloud.net/mst/query, XML command query-hlrv2 (no credentials)
+             -> URL of each service for the caller's region: oauth2, (sec-)userapp, (sec-)alarmapp.
+             Same request as the app's native P2P library (ServerResource::BuildHlr in
+             libqv-p2p-v2.so); the app's client certificate is not needed.
+  1. OAuth   GET  <oauth2>/qvoauthv2/token  (grant_type=password,
              pwd = sha256_hex(account password)) -> JWT access_token (claim qv-uid = ACCOUNT_ID)
-  2. Login   "duplex" channel on https://shi-19-sec.qvcloud.net:
+  2. Login   "duplex" channel on <sec-userapp>:
              GET  /auth/user;jus_duplex=down   -> jsessionid cookie
              POST /auth/user;jus_duplex=up     -> XML envelope, command=login
              GET  /auth/user;jus_duplex=down   -> answer: SESSION_ID + account-id
-  3. Alarm   POST /UserAlarm command=client-login  (Content-Type: application/xml WITHOUT charset)
-  4. Read    POST /UserAlarm command=client-query-recordlist (empty filter, pageno starts at 0)
+  3. Alarm   POST <sec-alarmapp>/UserAlarm command=client-login
+             (Content-Type: application/xml WITHOUT charset)
+  4. Read    POST <sec-alarmapp>/UserAlarm command=client-query-recordlist
+             (empty filter, pageno starts at 0)
 
-The servers present a private QUALVISION certificate: TLS verification is disabled.
+The servers present a private QUALVISION certificate without host name: TLS verification is
+disabled.
 ⚠ The account gets locked after a few wrong passwords: never retry blindly.
 """
 from __future__ import annotations
@@ -26,6 +33,7 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 import xml.etree.ElementTree as ET
 from typing import Any
 
@@ -33,8 +41,14 @@ import aiohttp
 
 _LOGGER = logging.getLogger(__name__)
 
-OAUTH_HOST = "oauth2shi.qvcloud.net"
-SEC_HOST = "shi-19-sec.qvcloud.net"
+MST_URL = "https://sh2.qvcloud.net/mst/query"  # bootstrap server hard-coded in the app
+MST_VERSION = "4456"  # protocol version sent by libqv-p2p-v2.so
+# Fallback servers if the bootstrap server cannot be reached (its answer for Europe, 2026-11).
+DEFAULT_SERVERS = {
+    "oauth2": "https://oauth2shi.qvcloud.net:443",
+    "userapp": "https://shi-18-sec.qvcloud.net:443/auth/user",
+    "alarmapp": "https://shi-25-sec.qvcloud.net:4443/UserAlarm",
+}
 OEM_ID = "G0123,A0058,G0058"
 APP_ID = "4000"
 CLIENT_TYPE = "0"
@@ -128,6 +142,44 @@ def _tz_gmt() -> str:
     return f"GMT{sign}{off // 60:02d}:{off % 60:02d}"
 
 
+def build_server_query(client_id: str, region: str = REGION_ID) -> str:
+    """query-hlrv2 request, field for field as built by ServerResource::BuildHlr."""
+    types = "userapp,sec-userapp,alarmapp,sec-alarmapp,oauth2"
+    return (f"{XML_DECL}<envelope><header><flag>{FLAG}</flag><command>query-hlrv2</command>"
+            f"<seq>1</seq></header><content><server-type>{types}</server-type><oem>{OEM_ID}</oem>"
+            f"<devid></devid><public-ip></public-ip><client-id>{client_id}</client-id>"
+            f"<regionid>{region}</regionid><version>{MST_VERSION}</version></content></envelope>")
+
+
+def parse_servers(txt: str) -> dict[str, str]:
+    """query-hlrv2 answer -> {"oauth2": base URL, "userapp": URL, "alarmapp": URL}.
+
+    The "sec-" variant of a service is preferred (the one the app uses for its secure channel).
+    """
+    try:
+        root = _parse_xml(txt)
+    except ET.ParseError as err:
+        raise CloudError("unreadable server list") from err
+    if (root.findtext(".//header/result") or "").strip() != "0":
+        raise CloudError(f"server list: result={root.findtext('.//header/result')}")
+    found: dict[str, str] = {}
+    for srv in root.iterfind(".//content/server"):
+        kind = (srv.findtext("server-type") or "").strip()
+        url = (srv.findtext("url") or "").strip().rstrip("/")
+        uri = (srv.findtext("uri") or "").strip()
+        if (srv.findtext("query-result") or "").strip() != "1" or not url.startswith("https://"):
+            continue
+        found[kind] = url if uri in ("", "/") else url + uri
+    out = {}
+    for kind in ("oauth2", "userapp", "alarmapp"):
+        url = found.get(f"sec-{kind}") or found.get(kind)
+        if url:
+            out[kind] = url
+    if len(out) < 3:
+        raise CloudError(f"server list incomplete: {sorted(found)}")
+    return out
+
+
 def describe(ev: dict[str, Any]) -> str:
     """Human-readable label of a normalized event."""
     if ev["type"] == "unlock":
@@ -188,6 +240,22 @@ class QvCloud:
         self._client_id = client_id
         self._alarm_session: str | None = None
         self.account_id: str | None = None
+        self.servers: dict[str, str] = dict(DEFAULT_SERVERS)
+
+    async def async_resolve_servers(self) -> None:
+        """Ask the bootstrap server which servers serve this region (like the app does)."""
+        try:
+            async with self._http.get(
+                MST_URL, data=build_server_query(self._client_id or secrets.token_hex(8)).encode(), ssl=False,
+                headers={"Content-Type": "application/xml;charset=utf-8"},
+                timeout=aiohttp.ClientTimeout(total=20),
+            ) as r:
+                txt = (await r.read()).decode("utf-8-sig", errors="replace")
+            self.servers = parse_servers(txt)
+        except (aiohttp.ClientError, asyncio.TimeoutError, CloudError) as err:
+            _LOGGER.warning("Could not get the Qvii server list (%s), using %s", err, self.servers)
+            return
+        _LOGGER.debug("Qvii servers: %s", self.servers)
 
     async def _xml(self, url: str, body: str) -> str:
         # Exactly like the app: Content-Type without charset + a separate "charset" header.
@@ -213,7 +281,7 @@ class QvCloud:
         }
         try:
             async with self._http.get(
-                f"https://{OAUTH_HOST}/qvoauthv2/token", params=params, ssl=False,
+                f"{self.servers['oauth2']}/qvoauthv2/token", params=params, ssl=False,
                 timeout=aiohttp.ClientTimeout(total=20),
             ) as r:
                 data = await r.json(content_type=None)
@@ -233,8 +301,8 @@ class QvCloud:
         content = (f"<content><account>{self._user}</account><password>{self._pwd}</password>"
                    f"<auth-type>0</auth-type><auth-code></auth-code>"
                    f"<ip-region-id>{REGION_ID}</ip-region-id></content>")
-        down = f"https://{SEC_HOST}/auth/user;jus_duplex=down"
-        up = f"https://{SEC_HOST}/auth/user;jus_duplex=up"
+        down = f"{self.servers['userapp']};jus_duplex=down"
+        up = f"{self.servers['userapp']};jus_duplex=up"
         timeout = aiohttp.ClientTimeout(total=45)
 
         async with self._http.get(down, ssl=False, timeout=timeout) as r:
@@ -261,12 +329,13 @@ class QvCloud:
         return sid
 
     async def _alarm_login(self, session_id: str) -> str:
-        content = (f"<content><account><authserver>{SEC_HOST}</authserver><id>{self.account_id}</id>"
+        auth_host = self.servers["userapp"].split("/")[2].split(":")[0]
+        content = (f"<content><account><authserver>{auth_host}</authserver><id>{self.account_id}</id>"
                    f"</account><client><appid>{APP_ID}</appid><id>{self._client_id}</id>"
                    f"<notifylang>en</notifylang><oemid>{OEM_ID}</oemid><timezone>{_tz_gmt()}</timezone>"
                    f"<token></token><tokentype>0</tokentype><type>{CLIENT_TYPE}</type></client></content>")
         txt = await self._xml(
-            f"https://{SEC_HOST}/UserAlarm",
+            self.servers["alarmapp"],
             f"<envelope><header><command>client-login</command><flag>{FLAG}</flag><seq>0</seq>"
             f"<session>{session_id}</session></header>{content}</envelope>",
         )
@@ -278,6 +347,7 @@ class QvCloud:
     async def async_login(self) -> None:
         self._http.cookie_jar.clear()
         self._alarm_session = None
+        await self.async_resolve_servers()
         await self.async_oauth()
         try:
             sid = await self._user_login()
@@ -291,7 +361,7 @@ class QvCloud:
                    f"<peroid></peroid></filter><maxid>{maxid}</maxid>"
                    f"<pagelinenum>{lines}</pagelinenum><pageno>{page}</pageno></content>")
         txt = await self._xml(
-            f"https://{SEC_HOST}/UserAlarm",
+            self.servers["alarmapp"],
             f"<envelope><header><command>client-query-recordlist</command><flag>{FLAG}</flag>"
             f"<seq>0</seq><session>{self._alarm_session}</session></header>{content}</envelope>",
         )

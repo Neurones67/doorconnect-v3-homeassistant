@@ -1,6 +1,7 @@
 """Integration tests with a simulated door station and cloud (no network access)."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 from homeassistant import config_entries
 from homeassistant.const import CONF_HOST
@@ -37,6 +38,7 @@ def mocks(socket_enabled):
         patch("custom_components.doorconnect_v3.local.LocalDevice.product_info", AsyncMock(return_value=INFO)),
         patch("custom_components.doorconnect_v3.local.LocalDevice.open_door", AsyncMock()) as open_door,
         patch("custom_components.doorconnect_v3.cloud.QvCloud.async_oauth", AsyncMock(return_value="tok")),
+        patch("custom_components.doorconnect_v3.cloud.QvCloud.async_resolve_servers", AsyncMock()),
         patch("custom_components.doorconnect_v3.cloud.QvCloud.async_get_history",
               AsyncMock(return_value=parse_records(HISTORY_XML))) as history,
     ):
@@ -140,3 +142,50 @@ async def test_history_relogin_after_404() -> None:
         events = await cloud.async_get_history(pages=1)
     assert login.await_count == 1
     assert [e["id"] for e in events] == ["1"]
+
+
+# Real query-hlrv2 answer from the bootstrap server (public host names only).
+SERVERS_XML = (
+    '<?xml version="1.0" encoding="UTF-8"?><envelope><header><flag>tdkcloud</flag>'
+    "<command>query-hlrv2</command><seq>1</seq><timestamp>1794475622</timestamp><result>0</result>"
+    "</header><content><client-regionid>1</client-regionid>"
+    "<server><server-type>userapp</server-type><query-result>1</query-result><regionid>1</regionid>"
+    "<url>https://shi-19.qvcloud.net:443</url><uri>/auth/user</uri></server>"
+    "<server><server-type>sec-userapp</server-type><query-result>1</query-result><regionid>1</regionid>"
+    "<url>https://shi-18-sec.qvcloud.net:443</url><uri>/auth/user</uri></server>"
+    "<server><server-type>alarmapp</server-type><query-result>1</query-result><regionid>1</regionid>"
+    "<url>https://shi-23.qvcloud.net:4443</url><uri>/UserAlarm</uri></server>"
+    "<server><server-type>sec-alarmapp</server-type><query-result>1</query-result><regionid>1</regionid>"
+    "<url>https://shi-25-sec.qvcloud.net:4443</url><uri>/UserAlarm</uri></server>"
+    "<server><server-type>oauth2</server-type><query-result>1</query-result><regionid>1</regionid>"
+    "<url>https://oauth2shi.qvcloud.net:443</url><uri>/</uri></server></content></envelope>"
+)
+
+
+def test_parse_servers_prefers_sec_variants() -> None:
+    from custom_components.doorconnect_v3.cloud import parse_servers
+
+    assert parse_servers(SERVERS_XML) == {
+        "oauth2": "https://oauth2shi.qvcloud.net:443",
+        "userapp": "https://shi-18-sec.qvcloud.net:443/auth/user",
+        "alarmapp": "https://shi-25-sec.qvcloud.net:4443/UserAlarm",
+    }
+
+
+def test_build_server_query_matches_native_library() -> None:
+    from custom_components.doorconnect_v3.cloud import build_server_query
+
+    q = build_server_query("abc")
+    assert "<command>query-hlrv2</command>" in q
+    assert "<server-type>userapp,sec-userapp,alarmapp,sec-alarmapp,oauth2</server-type>" in q
+    assert "<client-id>abc</client-id><regionid>0</regionid><version>4456</version>" in q
+
+
+async def test_resolve_servers_falls_back_to_defaults() -> None:
+    from custom_components.doorconnect_v3.cloud import DEFAULT_SERVERS, QvCloud
+
+    http = MagicMock()
+    http.get.side_effect = aiohttp.ClientError("unreachable")
+    cloud = QvCloud(http, "user", "pwd", "cid")
+    await cloud.async_resolve_servers()
+    assert cloud.servers == DEFAULT_SERVERS
