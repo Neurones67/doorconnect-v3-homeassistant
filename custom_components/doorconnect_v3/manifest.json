@@ -18,5 +18,5 @@
     "custom_components.doorconnect_v3"
   ],
   "requirements": [],
-  "version": "0.1.2"
+  "version": "0.1.3"
 }
