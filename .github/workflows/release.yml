@@ -9,7 +9,7 @@ jobs:
     name: Tag matches manifest version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - run: |
           tag="${GITHUB_REF_NAME#v}"
           version=$(jq -r .version custom_components/doorconnect_v3/manifest.json)
